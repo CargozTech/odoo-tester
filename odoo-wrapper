@@ -15,12 +15,12 @@ addonspath=/opt/odoo/odoo/addons,/opt/odoo/addons
 addons=$(find ${addonsdir} -mindepth 1 -maxdepth 1 -type d -printf '%f\n')
 if [ -n "${addons}" ] ; then
     for addon in ${addons} ; do
-	if [ -n "${includes}" ] ; then
-	    includes="${includes},"
-	fi
-	includes="${includes}*addons/${addon}/*"
+        if [ -n "${includes}" ] ; then
+            includes="${includes},"
+        fi
+        includes="${includes}*addons/${addon}/*"
     done
-    command="coverage3 run --include=\"${includes}\" --omit=\"*/tests/*\" \
+    command="COVERAGE_FILE=/tmp/.coverage python3-coverage run --include=\"${includes}\" --omit=\"*/tests/*\" \
              --branch ${command}"
     addonspath="${addonspath},${addonsdir}"
 fi
@@ -38,7 +38,7 @@ set -x
 
 # Start database
 #
-su postgres -c "pg_ctl start"
+su postgres -c "service postgresql start"
 
 # Run Odoo
 #
@@ -46,10 +46,10 @@ su odoo -l -c "${command}"
 
 # Stop database
 #
-su postgres -c "pg_ctl stop"
+su postgres -c "service postgresql stop"
 
 # Generate coverage report, if applicable
 #
 if [ -n "${addons}" ] ; then
-    su odoo -l -c "coverage3 report --show-missing"
+    su odoo -l -c "COVERAGE_FILE=/tmp/.coverage python3-coverage report --show-missing"
 fi

@@ -1,8 +1,12 @@
-FROM fedora:29
+FROM ubuntu:22.04
 
 # Odoo version
 #
-ENV ODOO_VERSION 11.0
+ENV ODOO_VERSION 15.0
+ENV PG_VERSION 12
+ENV LANG C.UTF-8
+ENV TZ=Asia/Dubai \
+    DEBIAN_FRONTEND=noninteractive
 
 # Odoo requires a non-standard build of wkhtmltopdf for many use cases
 # (including running without a local X display).
@@ -16,39 +20,51 @@ ENV H2P_URI ${H2P_BASE}/${H2P_VER}/${H2P_FILE}
 # Packages
 #
 USER root
-RUN dnf update -y ; dnf clean all
-RUN dnf install -y python3-PyPDF2 python3-passlib python3-babel \
-		   python3-werkzeug python3-lxml python3-decorator \
-		   python3-dateutil 'python3-yaml < 5' python3-psycopg2 \
-		   python3-pillow python3-psutil python3-requests \
-		   python3-jinja2 python3-reportlab python3-html2text \
-		   python3-docutils python3-num2words python3-phonenumbers \
-		   python3-vatnumber python3-xlrd python3-xlwt \
-		   python3-coverage python3-coveralls python3-magic \
-		   wkhtmltopdf nodejs-less postgresql-server \
-		   findutils unzip libpng15 compat-openssl10 ${H2P_URI} \
-		   texlive-times texlive-courier ; \
-    dnf clean all
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        gnupg \
+        libfreetype6-dev \
+        libfribidi-dev \
+        libharfbuzz-dev \
+        libjpeg8-dev \
+        liblcms2-dev \
+        libopenjp2-7-dev \
+        libpq-dev \
+        libtiff5-dev \
+        libwebp-dev \
+        libxcb1-dev \
+        libxslt1-dev \
+        python3-dev \
+        python3-pip \
+        unzip \
+        zlib1g-dev \
+        libldap2-dev \
+        libsasl2-dev \
+        libssl-dev \
+        python3-coverage \
+        libxml2-dev
 
-# Odoo's barcode generation uses reportlab, which tends to misdetect
-# its platform and assume that it is running on Windows.  Add symlinks
-# using the Windows font file names so that reportlab will find its
-# required fonts anyway.
-#
-RUN mkdir -p /usr/share/fonts/default/Type1 ; \
-    ln -s /usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmr8a.pfb \
-	  /usr/share/fonts/default/Type1/_er_____.pfb ; \
-    ln -s /usr/share/texlive/texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb \
-	  /usr/share/fonts/default/Type1/com_____.pfb
 
-# PostgreSQL initialisation
-#
-ENV PGDATA /var/lib/pgsql/data
-USER postgres
-RUN initdb --auth trust --encoding utf8
+# install latest postgresql and postgresql-client
+RUN echo 'deb http://apt.postgresql.org/pub/repos/apt/ jammy-pgdg main' > /etc/apt/sources.list.d/pgdg.list \
+    && GNUPGHOME="$(mktemp -d)" \
+    && export GNUPGHOME \
+    && repokey='B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8' \
+    && gpg --batch --keyserver keyserver.ubuntu.com --recv-keys "${repokey}" \
+    && gpg --batch --armor --export "${repokey}" > /etc/apt/trusted.gpg.d/pgdg.gpg.asc \
+    && gpgconf --kill all \
+    && rm -rf "$GNUPGHOME" \
+    && apt-get update  \
+    && apt-get install --no-install-recommends -y postgresql-${PG_VERSION} postgresql-client-${PG_VERSION} \
+    && rm -f /etc/apt/sources.list.d/pgdg.list \
+    && rm -rf /var/lib/apt/lists/*
+
 
 # PostgreSQL tuning
 #
+USER postgres
+ENV PGDATA /etc/postgresql/${PG_VERSION}/main
 COPY postgresql.conf.nosync ${PGDATA}/postgresql.conf.nosync
 RUN cat ${PGDATA}/postgresql.conf.nosync >> ${PGDATA}/postgresql.conf
 
@@ -57,23 +73,28 @@ RUN cat ${PGDATA}/postgresql.conf.nosync >> ${PGDATA}/postgresql.conf
 USER root
 RUN useradd odoo
 USER postgres
-RUN pg_ctl start ; \
+RUN service postgresql start ; \
     createuser odoo ; \
     createdb --owner odoo odoo ; \
-    pg_ctl stop
+    service postgresql stop
 
 # Odoo wrapper script
 #
 USER root
 RUN mkdir /opt/odoo-addons
+RUN mkdir /var/lib/odoo ; chown odoo /var/lib/odoo
 COPY odoo-wrapper /usr/local/bin/odoo-wrapper
+COPY requirements.txt /opt/odoo-${ODOO_VERSION}-requirements.txt
 
 # Upstream Odoo snapshot
 #
 ADD https://codeload.github.com/odoo/odoo/zip/${ODOO_VERSION} /opt/odoo.zip
 USER root
 RUN unzip -q -d /opt /opt/odoo.zip ; \
-    ln -s odoo-${ODOO_VERSION} /opt/odoo
+    ln -s /opt/odoo-${ODOO_VERSION} /opt/odoo
+
+RUN pip install setuptools wheel
+RUN pip install -r /opt/odoo-${ODOO_VERSION}-requirements.txt
 
 # Create base Odoo database
 #
