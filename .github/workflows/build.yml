@@ -3,10 +3,9 @@ name: Build
 on:
   push:
   schedule:
-    - cron: '00 23 2 * *'
+    - cron: "00 23 2 * *"
 
 jobs:
-
   build:
     name: Build
     runs-on: ubuntu-20.04
@@ -15,10 +14,10 @@ jobs:
         uses: actions/checkout@v2
       - name: Build
         run: |
-          sudo docker build -t "${GITHUB_REPOSITORY}" .
+          sudo docker build -t "cargoz/odoo-tester" .
       - name: Test
         run: |
-          sudo docker run --rm "${GITHUB_REPOSITORY}"
+          sudo docker run --rm "cargoz/odoo-tester"
       - name: Publish
         run: |
           sudo docker login -u "${{ secrets.DOCKER_USERNAME }}" \
